@@ -1,0 +1,41 @@
+name: SF Fillmore Watchbot
+
+on:
+  schedule:
+    # Run every 6 hours
+    - cron: "0 */6 * * *"
+  workflow_dispatch: # Allow manual triggering
+
+permissions:
+  contents: write   # Needed to commit the state file back to the repo
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Fetch the full history so we can push the updated state back
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Run watchbot
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: node src/watchbot.js
+
+      - name: Commit and push updated state
+        run: |
+          git config user.name  "SF Watchbot"
+          git config user.email "watchbot@users.noreply.github.com"
+          git add state/seen.json
+          # Only commit if there are changes
+          git diff --cached --quiet || git commit -m "chore: update watchbot state [skip ci]"
+          git push
