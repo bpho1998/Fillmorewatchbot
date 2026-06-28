@@ -32,6 +32,11 @@ const SEARCH_TERMS = [
   "Neil Mehta",
   "Lighthouse Public Affairs",
   "Peterson, Rich",
+  "North Room LLC",
+  "Pointed Blue LLC",
+  "Shaded Flame LLC",
+  "Temperate Lands LLC",
+  "White Birches LLC",
 ];
 
 /**
@@ -69,7 +74,6 @@ const SOURCES = [
     ],
     summaryFn: (r) =>
       `**Lobbyist:** ${r.lobbyistname || "—"} (${r.firmname || "—"})  \n**Client:** ${r.clientname || "—"}  \n**Description:** ${(r.description || "—").slice(0, 200)}  \n**Date:** ${r.date ? r.date.slice(0, 10) : "—"}`,
-    // Deep link directly to the specific filing in the Netfile portal
     linkTemplate: (r) =>
       r.fromfiling
         ? `https://netfile.com/app/lobbyist/filing/${r.fromfiling}/report`
@@ -95,7 +99,6 @@ const SOURCES = [
     ],
     summaryFn: (r) =>
       `**Filer/Committee:** ${r.filer_naml || "—"}  \n**Contributor/Payee:** ${[r.tran_namf, r.tran_naml].filter(Boolean).join(" ") || "—"}  \n**Employer:** ${r.tran_emp || "—"}  \n**Amount:** $${Number(r.tran_amt1 || 0).toLocaleString()}  \n**Date:** ${r.filing_date ? r.filing_date.slice(0, 10) : "—"}`,
-    // Deep link to the specific filing in the Netfile campaign finance portal
     linkTemplate: (r) =>
       r.filing_id
         ? `https://netfile.com/pub2/api/filing/${r.filing_id}/detail?aid=sfo`
@@ -118,7 +121,6 @@ const SOURCES = [
     ],
     summaryFn: (r) =>
       `**Address:** ${[r.street_number, r.street_name, r.street_suffix].filter(Boolean).join(" ") || "—"}  \n**Applicant:** ${r.applicant_name || "—"}  \n**Description:** ${(r.description || "—").slice(0, 200)}  \n**Status:** ${r.status || "—"}  \n**Filed:** ${r.filed_date ? r.filed_date.slice(0, 10) : "—"}`,
-    // Deep link directly to the permit in DBI's permit tracking system
     linkTemplate: (r) =>
       r.permit_number
         ? `https://dbiweb02.sfgov.org/dbipts/default.aspx?permit=${r.permit_number}`
@@ -140,7 +142,6 @@ const SOURCES = [
     ],
     summaryFn: (r) =>
       `**Document Type:** ${r.document_type || "—"}  \n**Grantor (Seller):** ${r.grantor_names || "—"}  \n**Grantee (Buyer):** ${r.grantee_names || "—"}  \n**Recorded:** ${r.recording_date ? r.recording_date.slice(0, 10) : "—"}`,
-    // Deep link to the document search on the Assessor-Recorder site using document number
     linkTemplate: (r) =>
       r.document_number
         ? `https://recorder.sfgov.org/document-detail?documentNumber=${r.document_number}`
