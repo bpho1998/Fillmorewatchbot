@@ -4,10 +4,10 @@
  * Upper Fillmore Revitalization Project and sends Discord notifications.
  *
  * Data sources (all via DataSF SODA API — no auth required):
- *   1. SF Ethics Commission – Lobbyist Activity
+ *   1. SF Ethics Commission – Lobbyist Activity Directory
  *   2. SF Ethics Commission – Campaign Finance Transactions
  *   3. SF DBI – Building Permits
- *   4. SF Assessor-Recorder – Property Transfer Tax filings
+ *   4. SF Assessor-Recorder – Recorded Documents (property transfers)
  */
 
 const fs   = require("fs");
@@ -49,35 +49,45 @@ const SOURCES = [
     id: "lobbyist_activity",
     label: "🏛 SF Ethics — Lobbyist Activity",
     color: 0xe74c3c,
+    // DataSF: Lobbyist Activity Directory
+    // https://data.sfgov.org/City-Management-and-Ethics/Lobbyist-Activity-Directory/s4ub-8j3t
+    // NOTE: This dataset is synced nightly from the live Netfile/Ethics Commission
+    // portal at https://netfile.com/lobbyistpub/#sfo — so monitoring this dataset
+    // effectively monitors both sources with a ~24hr lag.
     url: "https://data.sfgov.org/resource/s4ub-8j3t.json",
-    dateField: "period_start",
+    dateField: "date",
     textFields: [
-      "lobbyist_name",
-      "lobbyist_firm",
-      "client_name",
-      "local_legislative_action",
-      "specific_action",
-      "subject_matter",
+      "lobbyistname",
+      "firmname",
+      "clientname",
+      "description",
+      "employeename",
+      "candidatename",
     ],
     summaryFn: (r) =>
-      `**Lobbyist:** ${r.lobbyist_name || "—"} (${r.lobbyist_firm || "—"})  \n**Client:** ${r.client_name || "—"}  \n**Action:** ${r.local_legislative_action || r.specific_action || "—"}`,
-    linkTemplate: () => "https://sfethics.org/disclosures/lobbyist-disclosure",
+      `**Lobbyist:** ${r.lobbyistname || "—"} (${r.firmname || "—"})  \n**Client:** ${r.clientname || "—"}  \n**Description:** ${(r.description || "—").slice(0, 200)}  \n**Date:** ${r.date ? r.date.slice(0, 10) : "—"}`,
+    linkTemplate: () => "https://netfile.com/lobbyistpub/#sfo",
   },
   {
     id: "campaign_finance",
     label: "💰 SF Ethics — Campaign Finance",
     color: 0x27ae60,
-    url: "https://data.sfgov.org/resource/pitq-26ib.json",
-    dateField: "date",
+    // DataSF: Campaign Finance - Transactions (all FPPC forms filed with SFEC)
+    // https://data.sfgov.org/City-Management-and-Ethics/Campaign-Finance-Transactions/pitq-e56w
+    url: "https://data.sfgov.org/resource/pitq-e56w.json",
+    dateField: "filing_date",
     textFields: [
-      "contributor_name",
-      "recipient_name",
-      "employer",
-      "contributor_address",
-      "contributor_city",
+      "filer_naml",
+      "filer_namf",
+      "tran_naml",
+      "tran_namf",
+      "tran_emp",
+      "tran_occ",
+      "memo_code",
+      "memo_refno",
     ],
     summaryFn: (r) =>
-      `**Contributor:** ${r.contributor_name || "—"}  \n**Recipient:** ${r.recipient_name || "—"}  \n**Amount:** $${Number(r.amount || 0).toLocaleString()}  \n**Date:** ${r.date ? r.date.slice(0, 10) : "—"}`,
+      `**Filer/Committee:** ${r.filer_naml || "—"}  \n**Contributor/Payee:** ${[r.tran_namf, r.tran_naml].filter(Boolean).join(" ") || "—"}  \n**Employer:** ${r.tran_emp || "—"}  \n**Amount:** $${Number(r.tran_amt1 || 0).toLocaleString()}  \n**Date:** ${r.filing_date ? r.filing_date.slice(0, 10) : "—"}`,
     linkTemplate: () =>
       "https://sfethics.org/disclosures/campaign-finance-disclosure",
   },
@@ -85,36 +95,40 @@ const SOURCES = [
     id: "building_permits",
     label: "🏗 SF DBI — Building Permits",
     color: 0xf39c12,
+    // DataSF: Building Permits
+    // https://data.sfgov.org/Housing-and-Buildings/Building-Permits/i98e-djp9
     url: "https://data.sfgov.org/resource/i98e-djp9.json",
     dateField: "filed_date",
     textFields: [
       "applicant_name",
       "owner_name",
-      "permit_address",
       "description",
       "contractor_name",
+      "street_name",
     ],
     summaryFn: (r) =>
-      `**Address:** ${r.permit_address || r.street_number + " " + r.street_name || "—"}  \n**Applicant:** ${r.applicant_name || "—"}  \n**Description:** ${(r.description || "—").slice(0, 200)}  \n**Status:** ${r.status || "—"}`,
+      `**Address:** ${[r.street_number, r.street_name, r.street_suffix].filter(Boolean).join(" ") || "—"}  \n**Applicant:** ${r.applicant_name || "—"}  \n**Description:** ${(r.description || "—").slice(0, 200)}  \n**Status:** ${r.status || "—"}  \n**Filed:** ${r.filed_date ? r.filed_date.slice(0, 10) : "—"}`,
     linkTemplate: (r) =>
       r.permit_number
         ? `https://dbiweb02.sfgov.org/dbipts/default.aspx?permit=${r.permit_number}`
         : "https://sfdbi.org/dbipts",
   },
   {
-    id: "property_sales",
-    label: "🏠 SF Assessor — Property Transfers",
+    id: "property_transfers",
+    label: "🏠 SF Assessor — Recorded Documents",
     color: 0x9b59b6,
+    // DataSF: Recorded Documents (property transfers / deeds)
+    // https://data.sfgov.org/Housing-and-Buildings/Recorded-Documents/wv5m-vpq2
     url: "https://data.sfgov.org/resource/wv5m-vpq2.json",
-    dateField: "sale_date",
+    dateField: "recording_date",
     textFields: [
-      "buyer_name",
-      "seller_name",
-      "property_location",
-      "buyer_mail_address",
+      "grantor_names",
+      "grantee_names",
+      "document_type",
+      "legal_description",
     ],
     summaryFn: (r) =>
-      `**Property:** ${r.property_location || "—"}  \n**Buyer:** ${r.buyer_name || "—"}  \n**Seller:** ${r.seller_name || "—"}  \n**Sale Price:** $${Number(r.sale_price || 0).toLocaleString()}  \n**Date:** ${r.sale_date ? r.sale_date.slice(0, 10) : "—"}`,
+      `**Document Type:** ${r.document_type || "—"}  \n**Grantor (Seller):** ${r.grantor_names || "—"}  \n**Grantee (Buyer):** ${r.grantee_names || "—"}  \n**Recorded:** ${r.recording_date ? r.recording_date.slice(0, 10) : "—"}`,
     linkTemplate: () =>
       "https://sfassessor.org/recorder-information/recorded-documents",
   },
@@ -137,13 +151,13 @@ function saveState(state) {
 
 /** Stable ID for a record — used to deduplicate across runs */
 function recordId(sourceId, row) {
-  // Try common primary-key fields, fall back to a hash of the whole row
   const pk =
     row.id ||
     row.record_id ||
     row.permit_number ||
     row.document_number ||
     row.transaction_id ||
+    row.filing_id ||
     JSON.stringify(row);
   return `${sourceId}::${pk}`;
 }
@@ -192,9 +206,6 @@ function postJSON(url, body) {
 
 // ─── Matching logic ───────────────────────────────────────────────────────────
 
-/**
- * Returns the matched search terms found in a row's text fields.
- */
 function matchedTerms(row, textFields) {
   const haystack = textFields
     .map((f) => (row[f] || "").toString().toLowerCase())
@@ -241,10 +252,6 @@ async function sendDiscordAlert(source, row, terms) {
 
 // ─── Per-source polling ───────────────────────────────────────────────────────
 
-/**
- * Builds a SODA query URL that fetches the last 90 days of records,
- * ordered newest-first, limited to 1000 rows.
- */
 function buildSodaUrl(source) {
   const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
     .toISOString()
@@ -277,7 +284,6 @@ async function pollSource(source, state) {
   for (const row of rows) {
     const id = recordId(source.id, row);
 
-    // Skip already-seen records
     if (state.seen[id]) continue;
 
     const terms = matchedTerms(row, source.textFields);
@@ -285,12 +291,9 @@ async function pollSource(source, state) {
       console.log(`  🔔 Match found [${id}]: ${terms.join(", ")}`);
       await sendDiscordAlert(source, row, terms);
       newAlerts++;
-
-      // Rate-limit: avoid hitting Discord too fast
       await new Promise((r) => setTimeout(r, 500));
     }
 
-    // Mark as seen regardless of match (to avoid re-checking old records)
     state.seen[id] = new Date().toISOString();
   }
 
@@ -322,7 +325,7 @@ async function main() {
   state.lastRun = new Date().toISOString();
   saveState(state);
 
-  console.log("\n═".repeat(60));
+  console.log("\n" + "═".repeat(60));
   console.log(`Run complete. Total new alerts: ${totalAlerts}`);
   console.log(`State saved to ${STATE_FILE}`);
 }
