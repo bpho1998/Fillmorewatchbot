@@ -30,6 +30,8 @@ const SEARCH_TERMS = [
   "Sam Singer",
   "Singer Associates",
   "Neil Mehta",
+  "Lighthouse Public Affairs",
+  "Peterson, Rich",
 ];
 
 /**
@@ -41,8 +43,8 @@ const SEARCH_TERMS = [
  *   url          – SODA API base URL
  *   dateField    – the field to sort/filter by recency
  *   textFields   – fields to search for our terms
- *   linkTemplate – fn(row) → URL to the record (best effort)
- *   summaryFn    – fn(row) → one-line description for the Discord embed
+ *   linkTemplate – fn(row) → deep URL to the specific record
+ *   summaryFn    – fn(row) → description for the Discord embed
  */
 const SOURCES = [
   {
@@ -51,9 +53,10 @@ const SOURCES = [
     color: 0xe74c3c,
     // DataSF: Lobbyist Activity Directory
     // https://data.sfgov.org/City-Management-and-Ethics/Lobbyist-Activity-Directory/s4ub-8j3t
-    // NOTE: This dataset is synced nightly from the live Netfile/Ethics Commission
-    // portal at https://netfile.com/lobbyistpub/#sfo — so monitoring this dataset
-    // effectively monitors both sources with a ~24hr lag.
+    // Synced nightly from the live Netfile/Ethics Commission portal.
+    // The `fromfiling` field contains the Netfile filing UUID, used to build
+    // a deep link directly to the specific filing:
+    // https://netfile.com/app/lobbyist/filing/{fromfiling}/report
     url: "https://data.sfgov.org/resource/s4ub-8j3t.json",
     dateField: "date",
     textFields: [
@@ -66,13 +69,17 @@ const SOURCES = [
     ],
     summaryFn: (r) =>
       `**Lobbyist:** ${r.lobbyistname || "—"} (${r.firmname || "—"})  \n**Client:** ${r.clientname || "—"}  \n**Description:** ${(r.description || "—").slice(0, 200)}  \n**Date:** ${r.date ? r.date.slice(0, 10) : "—"}`,
-    linkTemplate: () => "https://netfile.com/lobbyistpub/#sfo",
+    // Deep link directly to the specific filing in the Netfile portal
+    linkTemplate: (r) =>
+      r.fromfiling
+        ? `https://netfile.com/app/lobbyist/filing/${r.fromfiling}/report`
+        : "https://netfile.com/lobbyistpub/#sfo",
   },
   {
     id: "campaign_finance",
     label: "💰 SF Ethics — Campaign Finance",
     color: 0x27ae60,
-    // DataSF: Campaign Finance - Transactions (all FPPC forms filed with SFEC)
+    // DataSF: Campaign Finance - Transactions
     // https://data.sfgov.org/City-Management-and-Ethics/Campaign-Finance-Transactions/pitq-e56w
     url: "https://data.sfgov.org/resource/pitq-e56w.json",
     dateField: "filing_date",
@@ -88,8 +95,11 @@ const SOURCES = [
     ],
     summaryFn: (r) =>
       `**Filer/Committee:** ${r.filer_naml || "—"}  \n**Contributor/Payee:** ${[r.tran_namf, r.tran_naml].filter(Boolean).join(" ") || "—"}  \n**Employer:** ${r.tran_emp || "—"}  \n**Amount:** $${Number(r.tran_amt1 || 0).toLocaleString()}  \n**Date:** ${r.filing_date ? r.filing_date.slice(0, 10) : "—"}`,
-    linkTemplate: () =>
-      "https://sfethics.org/disclosures/campaign-finance-disclosure",
+    // Deep link to the specific filing in the Netfile campaign finance portal
+    linkTemplate: (r) =>
+      r.filing_id
+        ? `https://netfile.com/pub2/api/filing/${r.filing_id}/detail?aid=sfo`
+        : "https://sfethics.org/disclosures/campaign-finance-disclosure",
   },
   {
     id: "building_permits",
@@ -108,6 +118,7 @@ const SOURCES = [
     ],
     summaryFn: (r) =>
       `**Address:** ${[r.street_number, r.street_name, r.street_suffix].filter(Boolean).join(" ") || "—"}  \n**Applicant:** ${r.applicant_name || "—"}  \n**Description:** ${(r.description || "—").slice(0, 200)}  \n**Status:** ${r.status || "—"}  \n**Filed:** ${r.filed_date ? r.filed_date.slice(0, 10) : "—"}`,
+    // Deep link directly to the permit in DBI's permit tracking system
     linkTemplate: (r) =>
       r.permit_number
         ? `https://dbiweb02.sfgov.org/dbipts/default.aspx?permit=${r.permit_number}`
@@ -129,8 +140,11 @@ const SOURCES = [
     ],
     summaryFn: (r) =>
       `**Document Type:** ${r.document_type || "—"}  \n**Grantor (Seller):** ${r.grantor_names || "—"}  \n**Grantee (Buyer):** ${r.grantee_names || "—"}  \n**Recorded:** ${r.recording_date ? r.recording_date.slice(0, 10) : "—"}`,
-    linkTemplate: () =>
-      "https://sfassessor.org/recorder-information/recorded-documents",
+    // Deep link to the document search on the Assessor-Recorder site using document number
+    linkTemplate: (r) =>
+      r.document_number
+        ? `https://recorder.sfgov.org/document-detail?documentNumber=${r.document_number}`
+        : "https://sfassessor.org/recorder-information/recorded-documents",
   },
 ];
 
@@ -224,6 +238,8 @@ async function sendDiscordAlert(source, row, terms) {
     return;
   }
 
+  const link = source.linkTemplate(row);
+
   const embed = {
     title: `🚨 New match in ${source.label}`,
     color: source.color,
@@ -234,11 +250,16 @@ async function sendDiscordAlert(source, row, terms) {
         value: terms.map((t) => `\`${t}\``).join(", "),
         inline: false,
       },
+      {
+        name: "🔗 View Filing",
+        value: link,
+        inline: false,
+      },
     ],
     footer: {
       text: `SF Fillmore Watchbot • ${new Date().toISOString().slice(0, 16).replace("T", " ")} UTC`,
     },
-    url: source.linkTemplate(row),
+    url: link,
     timestamp: new Date().toISOString(),
   };
 
