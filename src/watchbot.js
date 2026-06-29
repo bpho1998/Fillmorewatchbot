@@ -1,17 +1,36 @@
 /**
  * SF Fillmore Watchbot
- * Monitors 4 SF open data sources for activity related to Neil Mehta /
- * Upper Fillmore Revitalization Project and sends Discord notifications.
  *
- * Data sources (all via DataSF SODA API — no auth required):
- *   1. SF Ethics Commission – Lobbyist Activity Directory
- *   2. SF Ethics Commission – Campaign Finance Transactions
- *   3. SF DBI – Building Permits
- *   4. SF Assessor-Recorder – Recorded Documents (property transfers)
+ * Monitors SF open data sources for activity related to Neil Mehta /
+ * Upper Fillmore Revitalization Project and sends Discord alerts for
+ * each new matching filing.
+ *
+ * SOURCES:
+ *   1. SF Ethics — Lobbyist Activity     (s4ub-8j3t)
+ *   2. SF Ethics — Campaign Finance      (pitq-e56w)
+ *   3. SF DBI — Building Permits         (i98e-djp9)
+ *   4. SF Assessor — Property Transfers  REMOVED: wv5m-vpq2 is the tax roll,
+ *      not recorded deeds. No public API exists for recorded documents.
+ *      Search manually at https://recorder.sfgov.org
+ *
+ * MATCHING STRATEGY (field-aware, learned from digest development):
+ *
+ *   LOBBYIST: match subject terms in client name or description.
+ *     Agent terms (Lighthouse, Peterson) only count when a subject term
+ *     also appears in the same record — prevents alerting on all their
+ *     unrelated client work.
+ *
+ *   CAMPAIGN FINANCE: match subject terms in contributor name or
+ *     filer/recipient name only. Do NOT match on employer field —
+ *     that pulls all of Lighthouse's unrelated political donations.
+ *
+ *   BUILDING PERMITS: match on 2000–2299 Fillmore St address block.
+ *     Dataset has no applicant/owner name fields — address range is
+ *     the reliable signal for Mehta's properties.
  */
 
-const fs   = require("fs");
-const path = require("path");
+const fs    = require("fs");
+const path  = require("path");
 const https = require("https");
 
 // ─── Configuration ────────────────────────────────────────────────────────────
@@ -19,8 +38,8 @@ const https = require("https");
 const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL;
 const STATE_FILE = path.join(__dirname, "../state/seen.json");
 
-/** Search terms — all checked case-insensitively against text fields */
-const SEARCH_TERMS = [
+// Subject terms — the actual Mehta/Fillmore entities
+const SUBJECT_TERMS = [
   "Upper Fillmore Revitalization",
   "Aegis Reserve",
   "Fillmore Reserve",
@@ -30,8 +49,6 @@ const SEARCH_TERMS = [
   "Sam Singer",
   "Singer Associates",
   "Neil Mehta",
-  "Lighthouse Public Affairs",
-  "Peterson, Rich",
   "North Room LLC",
   "Pointed Blue LLC",
   "Shaded Flame LLC",
@@ -39,41 +56,33 @@ const SEARCH_TERMS = [
   "White Birches LLC",
 ];
 
-/**
- * DataSF SODA endpoints and field configs.
- *
- * Each source defines:
- *   id           – unique key for this source
- *   label        – human-readable name
- *   url          – SODA API base URL
- *   dateField    – the field to sort/filter by recency
- *   textFields   – fields to search for our terms
- *   linkTemplate – fn(row) → deep URL to the specific record
- *   summaryFn    – fn(row) → description for the Discord embed
- */
+// Agent terms — lobbyists acting for Mehta interests
+// Only used in lobbyist source, and only when a subject term also appears
+const AGENT_TERMS = [
+  "Lighthouse Public Affairs",
+  "Peterson, Rich",
+];
+
+// Fillmore St address range covering Mehta's properties
+const FILLMORE_RANGE = { street: "fillmore", min: 2000, max: 2299 };
+
+// ─── Sources ──────────────────────────────────────────────────────────────────
+
 const SOURCES = [
   {
     id: "lobbyist_activity",
     label: "🏛 SF Ethics — Lobbyist Activity",
     color: 0xe74c3c,
-    // DataSF: Lobbyist Activity Directory
     // https://data.sfgov.org/City-Management-and-Ethics/Lobbyist-Activity-Directory/s4ub-8j3t
-    // Synced nightly from the live Netfile/Ethics Commission portal.
-    // The `fromfiling` field contains the Netfile filing UUID, used to build
-    // a deep link directly to the specific filing:
-    // https://netfile.com/app/lobbyist/filing/{fromfiling}/report
+    // Confirmed field names from DataSF schema
     url: "https://data.sfgov.org/resource/s4ub-8j3t.json",
     dateField: "date",
-    textFields: [
-      "lobbyistname",
-      "firmname",
-      "clientname",
-      "description",
-      "employeename",
-      "candidatename",
-    ],
+    matchFn: matchLobbyist,
     summaryFn: (r) =>
-      `**Lobbyist:** ${r.lobbyistname || "—"} (${r.firmname || "—"})  \n**Client:** ${r.clientname || "—"}  \n**Description:** ${(r.description || "—").slice(0, 200)}  \n**Date:** ${r.date ? r.date.slice(0, 10) : "—"}`,
+      `**Lobbyist:** ${r.lobbyistname || "—"} (${r.firmname || "—"})\n` +
+      `**Client:** ${r.clientname || "—"}\n` +
+      `**Description:** ${(r.description || "—").slice(0, 200)}\n` +
+      `**Date:** ${r.date ? r.date.slice(0, 10) : "—"}`,
     linkTemplate: (r) =>
       r.fromfiling
         ? `https://netfile.com/app/lobbyist/filing/${r.fromfiling}/report`
@@ -83,71 +92,111 @@ const SOURCES = [
     id: "campaign_finance",
     label: "💰 SF Ethics — Campaign Finance",
     color: 0x27ae60,
-    // DataSF: Campaign Finance - Transactions
     // https://data.sfgov.org/City-Management-and-Ethics/Campaign-Finance-Transactions/pitq-e56w
+    // Confirmed field names: filer_name, transaction_first_name, transaction_last_name,
+    // transaction_amount_1, transaction_date, filing_date
     url: "https://data.sfgov.org/resource/pitq-e56w.json",
     dateField: "filing_date",
-    textFields: [
-      "filer_naml",
-      "filer_namf",
-      "tran_naml",
-      "tran_namf",
-      "tran_emp",
-      "tran_occ",
-      "memo_code",
-      "memo_refno",
-    ],
-    summaryFn: (r) =>
-      `**Filer/Committee:** ${r.filer_naml || "—"}  \n**Contributor/Payee:** ${[r.tran_namf, r.tran_naml].filter(Boolean).join(" ") || "—"}  \n**Employer:** ${r.tran_emp || "—"}  \n**Amount:** $${Number(r.tran_amt1 || 0).toLocaleString()}  \n**Date:** ${r.filing_date ? r.filing_date.slice(0, 10) : "—"}`,
+    matchFn: matchFinance,
+    summaryFn: (r) => {
+      const contributor = [r.transaction_first_name, r.transaction_last_name].filter(Boolean).join(" ") || "—";
+      const amount = Number(r.transaction_amount_1 || 0);
+      const date = (r.transaction_date || r.filing_date || "").slice(0, 10);
+      return (
+        `**Filer/Committee:** ${r.filer_name || "—"}\n` +
+        `**Contributor:** ${contributor}\n` +
+        `**Employer:** ${r.transaction_employer || "—"}\n` +
+        `**Amount:** $${amount.toLocaleString()}\n` +
+        `**Date:** ${date}`
+      );
+    },
     linkTemplate: (r) =>
-      r.filing_id
-        ? `https://netfile.com/pub2/api/filing/${r.filing_id}/detail?aid=sfo`
+      r.filing_id_number
+        ? `https://netfile.com/pub2/api/filing/${r.filing_id_number}/detail?aid=sfo`
         : "https://sfethics.org/disclosures/campaign-finance-disclosure",
   },
   {
     id: "building_permits",
     label: "🏗 SF DBI — Building Permits",
     color: 0xf39c12,
-    // DataSF: Building Permits
     // https://data.sfgov.org/Housing-and-Buildings/Building-Permits/i98e-djp9
+    // No applicant/owner name fields exist — address range is the signal.
+    // Alerts on any permit filed for 2000–2299 Fillmore St.
     url: "https://data.sfgov.org/resource/i98e-djp9.json",
     dateField: "filed_date",
-    textFields: [
-      "applicant_name",
-      "owner_name",
-      "description",
-      "contractor_name",
-      "street_name",
-    ],
-    summaryFn: (r) =>
-      `**Address:** ${[r.street_number, r.street_name, r.street_suffix].filter(Boolean).join(" ") || "—"}  \n**Applicant:** ${r.applicant_name || "—"}  \n**Description:** ${(r.description || "—").slice(0, 200)}  \n**Status:** ${r.status || "—"}  \n**Filed:** ${r.filed_date ? r.filed_date.slice(0, 10) : "—"}`,
+    matchFn: matchPermit,
+    summaryFn: (r) => {
+      const addr = [r.street_number, r.street_name, r.street_suffix].filter(Boolean).join(" ");
+      const cost = r.estimated_cost ? `$${Number(r.estimated_cost).toLocaleString()}` : "—";
+      return (
+        `**Address:** ${addr || "—"}\n` +
+        `**Permit #:** ${r.permit_number || "—"}\n` +
+        `**Status:** ${r.status || "—"}\n` +
+        `**Work:** ${(r.description || "—").slice(0, 200)}\n` +
+        `**Est. Cost:** ${cost}\n` +
+        `**Filed:** ${r.filed_date ? r.filed_date.slice(0, 10) : "—"}`
+      );
+    },
     linkTemplate: (r) =>
       r.permit_number
         ? `https://dbiweb02.sfgov.org/dbipts/default.aspx?permit=${r.permit_number}`
         : "https://sfdbi.org/dbipts",
   },
-  {
-    id: "property_transfers",
-    label: "🏠 SF Assessor — Recorded Documents",
-    color: 0x9b59b6,
-    // DataSF: Recorded Documents (property transfers / deeds)
-    // https://data.sfgov.org/Housing-and-Buildings/Recorded-Documents/wv5m-vpq2
-    url: "https://data.sfgov.org/resource/wv5m-vpq2.json",
-    dateField: "recording_date",
-    textFields: [
-      "grantor_names",
-      "grantee_names",
-      "document_type",
-      "legal_description",
-    ],
-    summaryFn: (r) =>
-      `**Document Type:** ${r.document_type || "—"}  \n**Grantor (Seller):** ${r.grantor_names || "—"}  \n**Grantee (Buyer):** ${r.grantee_names || "—"}  \n**Recorded:** ${r.recording_date ? r.recording_date.slice(0, 10) : "—"}`,
-    linkTemplate: (r) =>
-      r.document_number
-        ? `https://recorder.sfgov.org/document-detail?documentNumber=${r.document_number}`
-        : "https://sfassessor.org/recorder-information/recorded-documents",
-  },
 ];
+
+// ─── Matching functions ───────────────────────────────────────────────────────
+
+function termIn(value, terms) {
+  const v = (value || "").toString().toLowerCase();
+  return terms.filter((t) => v.includes(t.toLowerCase()));
+}
+
+function matchLobbyist(row) {
+  // Primary: client name contains a subject term
+  const clientHits = termIn(row.clientname, SUBJECT_TERMS);
+  if (clientHits.length > 0) return clientHits;
+
+  // Secondary: description contains a subject term
+  const descHits = termIn(row.description, SUBJECT_TERMS);
+  if (descHits.length > 0) return descHits;
+
+  // Tertiary: agent term in firm/lobbyist AND subject term elsewhere in record
+  const isAgent =
+    termIn(row.firmname, AGENT_TERMS).length > 0 ||
+    termIn(row.lobbyistname, AGENT_TERMS).length > 0;
+  if (isAgent) {
+    const allText = [row.clientname, row.description, row.candidatename, row.employeename]
+      .map((f) => (f || "").toLowerCase()).join(" ");
+    const subjectHits = SUBJECT_TERMS.filter((t) => allText.includes(t.toLowerCase()));
+    if (subjectHits.length > 0) {
+      return [
+        ...termIn(row.firmname, AGENT_TERMS),
+        ...termIn(row.lobbyistname, AGENT_TERMS),
+      ];
+    }
+  }
+
+  return [];
+}
+
+function matchFinance(row) {
+  // Only match on contributor name or filer/recipient name — not employer
+  const filerHits = termIn(row.filer_name, SUBJECT_TERMS);
+  const contributor = [row.transaction_first_name, row.transaction_last_name]
+    .filter(Boolean).join(" ");
+  const contribHits = termIn(contributor, SUBJECT_TERMS);
+  const descHits = termIn(row.transaction_description, SUBJECT_TERMS);
+  return [...new Set([...filerHits, ...contribHits, ...descHits])];
+}
+
+function matchPermit(row) {
+  const street = (row.street_name || "").toLowerCase();
+  const num = parseInt(row.street_number || "0", 10);
+  if (street === FILLMORE_RANGE.street && num >= FILLMORE_RANGE.min && num <= FILLMORE_RANGE.max) {
+    return [`${row.street_number} Fillmore St`];
+  }
+  return [];
+}
 
 // ─── State helpers ────────────────────────────────────────────────────────────
 
@@ -164,7 +213,6 @@ function saveState(state) {
   fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
 }
 
-/** Stable ID for a record — used to deduplicate across runs */
 function recordId(sourceId, row) {
   const pk =
     row.id ||
@@ -172,24 +220,21 @@ function recordId(sourceId, row) {
     row.permit_number ||
     row.document_number ||
     row.transaction_id ||
-    row.filing_id ||
+    row.filing_id_number ||
     JSON.stringify(row);
   return `${sourceId}::${pk}`;
 }
 
-// ─── HTTP helper ──────────────────────────────────────────────────────────────
+// ─── HTTP helpers ─────────────────────────────────────────────────────────────
 
 function fetchJSON(url) {
   return new Promise((resolve, reject) => {
-    https.get(url, { headers: { "Accept": "application/json" } }, (res) => {
+    https.get(url, { headers: { Accept: "application/json" } }, (res) => {
       let data = "";
       res.on("data", (chunk) => (data += chunk));
       res.on("end", () => {
-        try {
-          resolve(JSON.parse(data));
-        } catch (e) {
-          reject(new Error(`JSON parse error for ${url}: ${e.message}`));
-        }
+        try { resolve(JSON.parse(data)); }
+        catch (e) { reject(new Error(`JSON parse error for ${url}: ${e.message}`)); }
       });
     }).on("error", reject);
   });
@@ -199,43 +244,33 @@ function postJSON(url, body) {
   return new Promise((resolve, reject) => {
     const payload = JSON.stringify(body);
     const u = new URL(url);
-    const options = {
-      hostname: u.hostname,
-      path: u.pathname + u.search,
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Content-Length": Buffer.byteLength(payload),
+    const req = https.request(
+      {
+        hostname: u.hostname,
+        path: u.pathname + u.search,
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(payload),
+        },
       },
-    };
-    const req = https.request(options, (res) => {
-      let data = "";
-      res.on("data", (c) => (data += c));
-      res.on("end", () => resolve({ status: res.statusCode, body: data }));
-    });
+      (res) => {
+        let d = "";
+        res.on("data", (c) => (d += c));
+        res.on("end", () => resolve({ status: res.statusCode, body: d }));
+      }
+    );
     req.on("error", reject);
     req.write(payload);
     req.end();
   });
 }
 
-// ─── Matching logic ───────────────────────────────────────────────────────────
-
-function matchedTerms(row, textFields) {
-  const haystack = textFields
-    .map((f) => (row[f] || "").toString().toLowerCase())
-    .join(" ");
-
-  return SEARCH_TERMS.filter((term) =>
-    haystack.includes(term.toLowerCase())
-  );
-}
-
-// ─── Discord notification ─────────────────────────────────────────────────────
+// ─── Discord alert ────────────────────────────────────────────────────────────
 
 async function sendDiscordAlert(source, row, terms) {
   if (!DISCORD_WEBHOOK_URL) {
-    console.log("[DRY RUN] Would send Discord alert:", { source: source.id, terms, row });
+    console.log("[DRY RUN] Would send alert:", { source: source.id, terms });
     return;
   }
 
@@ -276,8 +311,7 @@ async function sendDiscordAlert(source, row, terms) {
 
 function buildSodaUrl(source) {
   const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
-    .toISOString()
-    .slice(0, 10);
+    .toISOString().slice(0, 10);
   const where = encodeURIComponent(`${source.dateField} >= '${since}'`);
   const order = encodeURIComponent(`${source.dateField} DESC`);
   return `${source.url}?$where=${where}&$order=${order}&$limit=1000`;
@@ -291,12 +325,12 @@ async function pollSource(source, state) {
   try {
     rows = await fetchJSON(url);
   } catch (err) {
-    console.error(`  ❌ Fetch error for ${source.id}: ${err.message}`);
+    console.error(`  ❌ Fetch error: ${err.message}`);
     return 0;
   }
 
   if (!Array.isArray(rows)) {
-    console.warn(`  ⚠️  Unexpected response shape for ${source.id}`);
+    console.warn(`  ⚠️  Unexpected response shape`);
     return 0;
   }
 
@@ -305,12 +339,11 @@ async function pollSource(source, state) {
 
   for (const row of rows) {
     const id = recordId(source.id, row);
-
     if (state.seen[id]) continue;
 
-    const terms = matchedTerms(row, source.textFields);
+    const terms = source.matchFn(row);
     if (terms.length > 0) {
-      console.log(`  🔔 Match found [${id}]: ${terms.join(", ")}`);
+      console.log(`  🔔 Match [${id}]: ${terms.join(", ")}`);
       await sendDiscordAlert(source, row, terms);
       newAlerts++;
       await new Promise((r) => setTimeout(r, 500));
@@ -327,9 +360,10 @@ async function pollSource(source, state) {
 async function main() {
   console.log("═".repeat(60));
   console.log("SF Fillmore Watchbot — starting run");
-  console.log(`  Time: ${new Date().toISOString()}`);
-  console.log(`  Webhook configured: ${!!DISCORD_WEBHOOK_URL}`);
-  console.log(`  Search terms (${SEARCH_TERMS.length}):`, SEARCH_TERMS);
+  console.log(`  Time:    ${new Date().toISOString()}`);
+  console.log(`  Webhook: ${!!DISCORD_WEBHOOK_URL}`);
+  console.log(`  Subject terms (${SUBJECT_TERMS.length}):`, SUBJECT_TERMS);
+  console.log(`  Agent terms (${AGENT_TERMS.length}):`, AGENT_TERMS);
   console.log("═".repeat(60));
 
   const state = loadState();
@@ -348,8 +382,7 @@ async function main() {
   saveState(state);
 
   console.log("\n" + "═".repeat(60));
-  console.log(`Run complete. Total new alerts: ${totalAlerts}`);
-  console.log(`State saved to ${STATE_FILE}`);
+  console.log(`Run complete. New alerts: ${totalAlerts}`);
 }
 
 main().catch((err) => {
