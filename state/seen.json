@@ -5798,7 +5798,15 @@
     "building_permits::1753835247525": "2026-07-25T15:48:24.158Z",
     "building_permits::1753834196435": "2026-07-25T15:48:24.158Z",
     "building_permits::1753833185389": "2026-07-25T15:48:24.158Z",
-    "building_permits::1753832448690": "2026-07-25T15:48:24.158Z"
+    "building_permits::1753832448690": "2026-07-25T15:48:24.158Z",
+    "campaign_finance::217066048": "2026-07-27T10:05:20.245Z",
+    "campaign_finance::ryURBO1MCcgD": "2026-07-27T10:05:20.245Z",
+    "campaign_finance::5VviGSWiUNK3": "2026-07-27T10:05:20.245Z",
+    "campaign_finance::IYaNrAk8KyVi": "2026-07-27T10:05:20.245Z",
+    "campaign_finance::2lqbagvLZBeB": "2026-07-27T10:05:20.245Z",
+    "campaign_finance::85fLBmTOxkFf": "2026-07-27T10:05:20.245Z",
+    "campaign_finance::ybJ1rl63xeZ5": "2026-07-27T10:05:20.245Z",
+    "campaign_finance::LYoEcgxcv1HB": "2026-07-27T10:05:20.245Z"
   },
-  "lastRun": "2026-07-27T03:54:12.571Z"
+  "lastRun": "2026-07-27T10:05:20.765Z"
 }
