@@ -11340,7 +11340,30 @@
     "building_permits::1756084521614": "2026-09-02T16:28:09.535Z",
     "building_permits::1756082401420": "2026-09-02T16:28:09.535Z",
     "building_permits::1756083401421": "2026-09-02T16:28:09.535Z",
-    "building_permits::1756099405041": "2026-09-02T16:28:09.536Z"
+    "building_permits::1756099405041": "2026-09-02T16:28:09.536Z",
+    "lobbyist_activity::313eb7d4-0d90-4f63-b5c4-4197fad2f143": "2026-09-03T11:04:42.380Z",
+    "lobbyist_activity::6d81f66d-4b72-43b4-916a-fc58b8515aaa": "2026-09-03T11:04:42.380Z",
+    "lobbyist_activity::4c442912-72b1-4a3c-8c69-caff4927d77e": "2026-09-03T11:04:42.380Z",
+    "lobbyist_activity::763dcfe8-22b0-4f58-8357-8c3b7c2662b7": "2026-09-03T11:04:42.380Z",
+    "lobbyist_activity::6e7062d0-d035-43c8-a867-926d2df47fc7": "2026-09-03T11:04:42.380Z",
+    "lobbyist_activity::e0b8b594-f343-41b4-babf-2168773c82e5": "2026-09-03T11:04:42.380Z",
+    "lobbyist_activity::f15db840-5e55-41c1-9398-309abbdb939d": "2026-09-03T11:04:42.380Z",
+    "lobbyist_activity::6fe4496e-6a5c-4ff9-a539-b4771146fa28": "2026-09-03T11:04:42.380Z",
+    "lobbyist_activity::aecefa53-16a5-4770-af4e-306cd905d607": "2026-09-03T11:04:42.380Z",
+    "lobbyist_activity::2855fdb0-710f-44ce-80a8-e085653ce370": "2026-09-03T11:04:42.380Z",
+    "lobbyist_activity::18bcfe72-d627-4e18-ae46-e194646376ff": "2026-09-03T11:04:42.380Z",
+    "lobbyist_activity::e7d08fe8-9c40-41c9-ae99-2580f23c5514": "2026-09-03T11:04:42.380Z",
+    "lobbyist_activity::75930e5c-f48f-447c-882d-f7223e8fadee": "2026-09-03T11:04:42.380Z",
+    "lobbyist_activity::a0b05cd5-9a83-4cfd-93e3-69a82838e857": "2026-09-03T11:04:42.380Z",
+    "campaign_finance::217350480": "2026-09-03T11:04:43.373Z",
+    "campaign_finance::qtgoUIoBGyNJ": "2026-09-03T11:04:43.373Z",
+    "campaign_finance::hsPiehUmIXSp": "2026-09-03T11:04:43.373Z",
+    "campaign_finance::gyUVoT66jOF3": "2026-09-03T11:04:43.373Z",
+    "campaign_finance::tVyBh6FiwmKk": "2026-09-03T11:04:43.373Z",
+    "campaign_finance::9pVCRuO49gdO": "2026-09-03T11:04:43.373Z",
+    "campaign_finance::BwuprbaZmiqN": "2026-09-03T11:04:43.373Z",
+    "campaign_finance::uclL3YyD94pD": "2026-09-03T11:04:43.373Z",
+    "campaign_finance::YRQMOlWRsZIZ": "2026-09-03T11:04:43.373Z"
   },
-  "lastRun": "2026-09-03T04:09:40.726Z"
+  "lastRun": "2026-09-03T11:04:43.680Z"
 }
