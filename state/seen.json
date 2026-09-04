@@ -11447,7 +11447,14 @@
     "building_permits::1756146193164": "2026-09-03T16:18:52.869Z",
     "building_permits::1756145114948": "2026-09-03T16:18:52.869Z",
     "building_permits::1756144296183": "2026-09-03T16:18:52.869Z",
-    "building_permits::1756143298587": "2026-09-03T16:18:52.869Z"
+    "building_permits::1756143298587": "2026-09-03T16:18:52.869Z",
+    "lobbyist_activity::4baed79f-407c-4f28-bc69-906d366f593c": "2026-09-04T11:05:51.342Z",
+    "lobbyist_activity::503177fb-d448-4508-80e1-c0995f39952a": "2026-09-04T11:05:51.342Z",
+    "lobbyist_activity::00e0fb0c-d970-46b5-9f85-1b18d199c6af": "2026-09-04T11:05:51.342Z",
+    "lobbyist_activity::d1c87e24-4f0d-40e4-99c4-1d3aff2939f7": "2026-09-04T11:05:51.342Z",
+    "campaign_finance::EXP932": "2026-09-04T11:05:51.835Z",
+    "campaign_finance::PDT2011": "2026-09-04T11:05:51.835Z",
+    "campaign_finance::PDT2012": "2026-09-04T11:05:51.835Z"
   },
-  "lastRun": "2026-09-04T04:16:43.130Z"
+  "lastRun": "2026-09-04T11:05:52.077Z"
 }
